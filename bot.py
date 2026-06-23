@@ -76,11 +76,11 @@ def normalize(text):
 def get_status_icon(status):
     s = normalize(status)
 
-    if "готов" in s:
+    if "готово" in s:
         return "🟢"
-    if "ревью" in s:
+    if "на ревью" in s:
         return "👀"
-    if "работ" in s:
+    if "в работе" in s:
         return "🛠️"
     if "холд" in s:
         return "⏸️"
@@ -263,10 +263,11 @@ async def catalog_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if r.get("product") == product and r.get("section") == section
         ]
 
-        text = f"📚 {product} → {section}\n\n"
+        text = f"📚 {h(product)} → {h(section)}\n\n"
+        text += "<pre>"
 
         for r in items:
-            text += f"└ {get_status_icon(r.get('status'))} {r.get('screen')}\n"
+            text += f"L {get_status_icon(r.get('status',''))} {r.get('screen')}\n"
 
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("← Назад", callback_data=f"product|{product}")],
