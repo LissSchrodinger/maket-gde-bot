@@ -245,18 +245,18 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if query == "❓ FAQ":
-    await update.message.reply_text(
-        "❓ Часто задаваемые вопросы\n\n"
-        "🔹 Не нашли нужный макет?\n"
-        "Попробуйте поиск по ключевым словам или воспользуйтесь каталогом.\n\n"
-        "🔹 Ссылка на макет устарела?\n"
-        "Напишите @G2_Schrodinger.\n\n"
-        "🔹 Нужно добавить новые макеты?\n"
-        "Напишите владельцу базы.\n\n"
-        "🔹 Возникли вопросы или проблемы?\n"
-        "@G2_Schrodinger"
-    )
-    return
+        await update.message.reply_text(
+            "❓ Часто задаваемые вопросы\n\n"
+            "🔹 Не нашли нужный макет?\n"
+            "Попробуйте поиск по ключевым словам или воспользуйтесь каталогом.\n\n"
+            "🔹 Ссылка на макет устарела?\n"
+            "Напишите @G2_Schrodinger.\n\n"
+            "🔹 Нужно добавить новые макеты?\n"
+            "Напишите владельцу базы.\n\n"
+            "🔹 Возникли вопросы или проблемы?\n"
+            "@G2_Schrodinger"
+        )
+        return
 
     results = search_makets(query)
 
@@ -270,7 +270,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Если макет точно существует или должен быть добавлен — напиши:\n"
             "@G2_Schrodinger",
             reply_markup=main_menu()
-)
+        )
         return
 
     await update.message.reply_text("🎉 Кое-что нашлось:")
