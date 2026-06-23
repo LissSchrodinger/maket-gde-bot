@@ -101,15 +101,15 @@ def h(text):
 def get_status_icon(status):
     s = normalize(status)
 
-    if "готово" in s:
+    if "Готово" in s:
         return "✅"
-    if "на ревью" in s:
+    if "На ревью" in s:
         return "👀"
-    if "в работе" in s:
+    if "В работе" in s:
         return "🛠️"
-    if "холд" in s:
+    if "Холд" in s:
         return "⏸️"
-    if "архив" in s:
+    if "Архив" in s:
         return "📦"
 
     return "▫️"
