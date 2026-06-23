@@ -48,8 +48,7 @@ def start_health_server():
             self.end_headers()
 
     port = int(os.getenv("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), Handler)
-    server.serve_forever()
+    HTTPServer(("0.0.0.0", port), Handler).serve_forever()
 
 
 # ---------------- DATA ----------------
@@ -62,25 +61,25 @@ def get_rows():
     if ROWS_CACHE and now - LAST_UPDATE < CACHE_TTL:
         return ROWS_CACHE
 
-    credentials_info = json.loads(GOOGLE_CREDENTIALS)
-    scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+    creds = json.loads(GOOGLE_CREDENTIALS)
 
     credentials = Credentials.from_service_account_info(
-        credentials_info,
-        scopes=scopes
+        creds,
+        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
     )
 
     client = gspread.authorize(credentials)
     sheet = client.open_by_key(SPREADSHEET_ID).sheet1
+
     rows = sheet.get_all_records()
 
     cleaned = []
-    for row in rows:
-        if row.get("product") and row.get("section"):
-            cleaned.append(row)
+    for r in rows:
+        if r.get("product") and r.get("section"):
+            cleaned.append(r)
 
-    for i, row in enumerate(cleaned):
-        row["_id"] = i
+    for i, r in enumerate(cleaned):
+        r["_id"] = i
 
     ROWS_CACHE = cleaned
     LAST_UPDATE = now
@@ -101,24 +100,18 @@ def h(text):
 def get_status_icon(status):
     s = normalize(status)
 
-    if "Готово" in s:
+    if "готов" in s:
         return "✅"
-    if "На ревью" in s:
+    if "ревью" in s:
         return "👀"
-    if "В работе" in s:
+    if "работ" in s:
         return "🛠️"
-    if "Холд" in s:
+    if "холд" in s:
         return "⏸️"
-    if "Архив" in s:
+    if "архив" in s:
         return "📦"
 
     return "▫️"
-
-
-def make_link(text, url):
-    if not url:
-        return h(text)
-    return f'<a href="{escape(url)}">{h(text)}</a>'
 
 
 # ---------------- SEARCH ----------------
@@ -129,42 +122,42 @@ def search_makets(query):
 
     results = []
 
-    for row in rows:
+    for r in rows:
         text = " ".join([
-            normalize(row.get("product", "")),
-            normalize(row.get("section", "")),
-            normalize(row.get("scenario", "")),
-            normalize(row.get("screen", "")),
-            normalize(row.get("keywords", "")),
-            normalize(row.get("status", "")),
+            normalize(r.get("product", "")),
+            normalize(r.get("section", "")),
+            normalize(r.get("scenario", "")),
+            normalize(r.get("screen", "")),
+            normalize(r.get("keywords", "")),
+            normalize(r.get("status", "")),
         ])
 
         if all(w in text for w in q_words):
-            results.append(row)
+            results.append(r)
 
     return results
 
 
 # ---------------- UI ----------------
 
-def format_result(row):
+def format_result(r):
     return (
-        f"🖼 {row.get('screen', 'Без названия')}\n\n"
-        f"🩵 Продукт: {row.get('product', '-')}\n"
-        f"📂 Раздел: {row.get('scenario', '-')}\n"
-        f"{get_status_icon(row.get('status', ''))} Статус: {row.get('status', '-')}\n\n"
-        f"🕑 Обновлено: {row.get('updated_at', '-')}"
+        f"🖼 {r.get('screen', 'Без названия')}\n\n"
+        f"🩵 Продукт: {r.get('product', '-')}\n"
+        f"📂 Раздел: {r.get('scenario', '-')}\n"
+        f"{get_status_icon(r.get('status',''))} Статус: {r.get('status','-')}\n\n"
+        f"🕑 Обновлено: {r.get('updated_at','-')}"
     )
 
 
-def result_keyboard(row):
+def result_keyboard(r):
     buttons = []
 
-    if row.get("screen_url"):
-        buttons.append([InlineKeyboardButton("Открыть сценарий", url=row["screen_url"])])
+    if r.get("screen_url"):
+        buttons.append([InlineKeyboardButton("🖼 Открыть сценарий", url=r["screen_url"])])
 
-    if row.get("scenario_url"):
-        buttons.append([InlineKeyboardButton("Открыть раздел", url=row["scenario_url"])])
+    if r.get("scenario_url"):
+        buttons.append([InlineKeyboardButton("📂 Открыть раздел", url=r["scenario_url"])])
 
     return InlineKeyboardMarkup(buttons)
 
@@ -173,7 +166,7 @@ def main_menu():
     return ReplyKeyboardMarkup(
         [
             ["🔍 Найти макет", "📚 Открыть каталог"],
-            ["❓ FAQ", "💬 Связаться"],
+            ["❓ FAQ", "💬 Связаться"]
         ],
         resize_keyboard=True
     )
@@ -205,10 +198,14 @@ def section_keyboard(product):
         if r.get("product") == product and r.get("section")
     })
 
-    return InlineKeyboardMarkup([
+    buttons = [
         [InlineKeyboardButton(s, callback_data=f"section|{product}|{i}")]
         for i, s in enumerate(sections)
-    ] + [[InlineKeyboardButton("← Назад", callback_data="catalog")]])
+    ]
+
+    buttons.append([InlineKeyboardButton("← Назад", callback_data="catalog")])
+
+    return InlineKeyboardMarkup(buttons)
 
 
 def build_section(product, section):
@@ -227,11 +224,10 @@ def build_section(product, section):
     text = f"📚 {h(product)} → {h(section)}\n\n"
 
     for scenario, items in scenarios.items():
-        url = items[0].get("scenario_url", "")
-        text += f"📂 {make_link(scenario, url)}\n"
+        text += f"📂 {scenario}\n"
 
         for r in items:
-            text += f"   └ {get_status_icon(r.get('status',''))} {make_link(r.get('screen',''), r.get('screen_url',''))}\n"
+            text += f"   └ {get_status_icon(r.get('status',''))} {r.get('screen','')}\n"
 
         text += "\n"
 
@@ -248,66 +244,39 @@ def build_section(product, section):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Привет! Я помогу найти нужный сценарий или раздел в Figma.\n\n"
-        "Выбери действие ниже или просто напиши, что ищешь.",
+        "Выбери действие ниже или просто напиши запрос.",
         reply_markup=main_menu()
     )
 
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        query = update.message.text
-        print("MSG:", query, flush=True)
+        q = update.message.text
 
-        if query == "🔍 Найти макет":
-            await update.message.reply_text("Напиши запрос для поиска.")
+        if q == "🔍 Найти макет":
+            await update.message.reply_text("Напиши запрос.")
             return
 
-        if query == "📚 Открыть каталог":
+        if q == "📚 Открыть каталог":
+            await update.message.reply_text("📚 Каталог", reply_markup=product_keyboard())
+            return
+
+        if q == "❓ FAQ":
             await update.message.reply_text(
-                "📚 Каталог\n\nВыбери продукт:",
-                reply_markup=product_keyboard()
+                "❓ FAQ\n\n"
+                "Если что-то не находится — напиши @G2_Schrodinger"
             )
             return
 
-        if query == "❓ FAQ":
-            await update.message.reply_text(
-                "❓ <b>Что умеет бот?</b>\n"
-                "Помогает быстро найти нужный экран, сценарий или раздел в Figma. "
-                "Можно искать по названию, ключевым словам или пользоваться каталогом.\n\n"
-        
-                "❓ <b>Не помню название экрана. Что делать?</b>\n"
-                "Открой каталог и пройди по структуре:\n"
-                "Продукт → Раздел → Сценарий.\n\n"
-        
-                "❓ <b>Почему я не могу найти макет?</b>\n"
-                "Обычно причина одна из трёх:\n"
-                "• Макет ещё не добавлен в каталог;\n"
-                "• Он называется не так, как ты ожидаешь;\n"
-                "• Макет действительно потерялся.\n"
-                "Последний случай пока не зафиксирован 😏\n\n"
-        
-                "❓ <b>Что делать, если ссылка сломалась или ведёт не туда?</b>\n"
-                "В меню бота кликни «Написать дизайнеру». "
-                "Желательно сразу приложить ссылку, по которой переходил.\n\n"
-        
-                "❓ <b>Кому писать, если всё плохо?</b>\n"
-                "Если ничего не находится, каталог выглядит странно, ссылки не работают "
-                "или просто хочется пожаловаться на жизнь —\n\n"
-                "👉 В меню бота кликни «Написать дизайнеру»",
-                parse_mode="HTML"
-            )
+        if q == "💬 Связаться":
+            await update.message.reply_text("@G2_Schrodinger")
             return
 
-        if query == "💬 Связаться":
-            await update.message.reply_text("👉 @G2_Schrodinger")
-            return
-
-        results = search_makets(query)
+        results = search_makets(q)
 
         if not results:
             await update.message.reply_text(
-                "😔 Ничего не нашла\n\n"
-                "Попробуй другой запрос или каталог.",
+                "😔 Ничего не нашла\nПопробуй другой запрос.",
                 reply_markup=main_menu()
             )
             return
@@ -321,7 +290,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     except Exception:
-        print(traceback.format_exc(), flush=True)
+        print(traceback.format_exc())
 
 
 async def handle_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -329,6 +298,8 @@ async def handle_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
 
     data = q.data
+
+    rows = get_rows()
 
     if data == "catalog":
         await q.edit_message_text("📚 Каталог", reply_markup=product_keyboard())
@@ -344,9 +315,10 @@ async def handle_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("section|"):
         _, product, i = data.split("|")
+
         sections = sorted({
             r.get("section", "")
-            for r in get_rows()
+            for r in rows
             if r.get("product") == product
         })
 
@@ -356,7 +328,6 @@ async def handle_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(
             text,
             reply_markup=kb,
-            parse_mode="HTML",
             disable_web_page_preview=True
         )
 
@@ -372,7 +343,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_catalog))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
 
-    print("BOT STARTED", flush=True)
+    print("BOT STARTED")
     app.run_polling()
 
 
