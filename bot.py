@@ -2,6 +2,7 @@ import json
 import os
 import time
 import threading
+import asyncio
 from html import escape
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -35,23 +36,31 @@ CACHE_TIME = 0
 TTL = 300
 
 
-# ---------------- HEALTH ----------------
+# ---------------- HEALTH SERVER ----------------
 
-def run_health():
-    class H(BaseHTTPRequestHandler):
+def run_server():
+    class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b"OK")
 
+        def do_HEAD(self):
+            self.send_response(200)
+            self.end_headers()
+
     port = int(os.getenv("PORT", 10000))
-    HTTPServer(("0.0.0.0", port), H).serve_forever()
+    HTTPServer(("0.0.0.0", port), Handler).serve_forever()
 
 
 # ---------------- DATA ----------------
 
 def get_rows():
     global CACHE, CACHE_TIME
+
+    if not GOOGLE_CREDENTIALS:
+        print("ERROR: GOOGLE_CREDENTIALS is empty")
+        return []
 
     now = time.time()
     if CACHE and now - CACHE_TIME < TTL:
@@ -145,11 +154,11 @@ def menu():
 
 def format_row(r):
     return (
-        f"🖼 {r.get('screen','Без названия')}\n\n"
-        f"🩵 Продукт: {r.get('product','-')}\n"
-        f"📂 Раздел: {r.get('section','-')}\n"
-        f"{icon(r.get('status',''))} Статус: {r.get('status','-')}\n\n"
-        f"🕑 {r.get('updated_at','-')}"
+        f"🖼 {h(r.get('screen','Без названия'))}\n\n"
+        f"🩵 Продукт: {h(r.get('product','-'))}\n"
+        f"📂 Раздел: {h(r.get('section','-'))}\n"
+        f"{icon(r.get('status',''))} Статус: {h(r.get('status','-'))}\n\n"
+        f"🕑 {h(r.get('updated_at','-'))}"
     )
 
 
@@ -184,7 +193,7 @@ async def search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if q == "📚 Открыть каталог":
         rows = get_rows()
 
-        products = sorted({r.get("product") for r in rows if r.get("product")})
+        products = sorted({str(r.get("product")) for r in rows if r.get("product")})
 
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton(p, callback_data=f"product|{p}")]
@@ -196,21 +205,11 @@ async def search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if q == "❓ FAQ":
         await update.message.reply_text(
-            "Раздел, который обычно никто не читает 😐\n\n"
-    
-            "🔎 Поиск не нашёл макет\n"
-            "Это не значит, что его нет.\n"
-            "Попробуй другой поисковый запрос.\n\n"
-    
-            "🧠 “Я точно видел этот макет”\n"
-            "Верю. Что-то точно случилось:\n"
-            "— Макет переехал, а дизайнер не обновил ссылку\n"
-            "— Это новый макет и его еще не добавили в базу\n"
-            "— Никто ещё не догадался, как его назвать нормально\n\n"
-            "Что бы ни случилось — пиши @G2_Schrodinger\n\n"
-    
-            "🔐 Нет доступа\n"
-            "Свяжись с дизайнером.\n\n"
+            "Раздел FAQ\n\n"
+            "🔎 Если макет не найден — попробуй другое слово\n\n"
+            "🧠 Если ты “точно его видел” — он мог переехать или быть переименован\n\n"
+            "🔐 Нет доступа — запроси его стандартным способом\n\n"
+            "💬 Если ничего не помогает — @G2_Schrodinger"
         )
         return
 
@@ -233,7 +232,7 @@ async def search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-# ---------------- CATALOG ----------------
+# ---------------- CALLBACK ----------------
 
 async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -243,7 +242,7 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = get_rows()
 
     if data == "catalog":
-        products = sorted({r.get("product") for r in rows if r.get("product")})
+        products = sorted({str(r.get("product")) for r in rows if r.get("product")})
 
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton(p, callback_data=f"product|{p}")]
@@ -254,7 +253,7 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data.startswith("product|"):
-        product = data.split("|")[1]
+        product = data.split("|", 1)[1]
 
         sections = sorted({
             r.get("section")
@@ -289,12 +288,11 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
         scenarios = {}
 
         for r in items:
-            scenarios.setdefault(r.get("scenario","Без сценария"), []).append(r)
+            scenarios.setdefault(r.get("scenario", "Без сценария"), []).append(r)
 
         text = f"📚 {h(product)} → {h(section)}\n\n"
 
         for sc, lst in scenarios.items():
-            url = lst[0].get("scenario_url")
             text += f"📂 {h(sc)}\n"
 
             for r in lst:
@@ -310,22 +308,36 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(text, reply_markup=kb)
 
 
+# ---------------- WEBHOOK CLEANUP ----------------
+
+async def post_init(app):
+    for i in range(3):
+        try:
+            await app.bot.delete_webhook(drop_pending_updates=True)
+            print("Webhook cleared")
+            return
+        except Exception as e:
+            print(f"Webhook attempt {i}: {e}")
+            await asyncio.sleep(2)
+
+
 # ---------------- MAIN ----------------
 
 def main():
-    threading.Thread(target=run_health, daemon=True).start()
+    threading.Thread(target=run_server, daemon=True).start()
 
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    app.bot.delete_webhook(drop_pending_updates=True)
+    app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(catalog))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_handler))
 
-    print("BOT STARTED")
+    print("🚀 BOT STARTED")
 
-    app.run_polling(drop_pending_updates=True)
+    app.run_polling(
+        drop_pending_updates=True,
+        allowed_updates=Update.ALL_TYPES
+    )
 
 
 if __name__ == "__main__":
