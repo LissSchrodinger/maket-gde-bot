@@ -163,7 +163,7 @@ def main_menu():
     return ReplyKeyboardMarkup(
         [
             ["🔍 Найти макет", "📚 Открыть каталог"],
-            ["❓ FAQ", "✍️ Написать дизайнеру"],
+            ["❓ FAQ", "💬 Связаться"],
         ],
         resize_keyboard=True
     )
@@ -295,7 +295,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if query == "✍️ Написать дизайнеру":
+    if query == "💬 Связаться":
         await update.message.reply_text(
             "Нашёл ошибку?\n"
             "Сломалась ссылка?\n"
