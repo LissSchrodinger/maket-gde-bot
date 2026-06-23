@@ -1,7 +1,6 @@
 import json
 import os
 import time
-from html import escape
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -216,7 +215,6 @@ async def catalog_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = q.data
     rows = get_rows()
 
-    # products
     if data == "catalog":
         products = sorted({r.get("product") for r in rows if r.get("product")})
 
@@ -228,9 +226,8 @@ async def catalog_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text("📚 Каталог", reply_markup=kb)
         return
 
-    # product → sections
     if data.startswith("product|"):
-        product = data.split("|")[1]
+        product = data.split("|", 1)[1]
 
         sections = sorted({
             r.get("section")
@@ -246,56 +243,46 @@ async def catalog_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(f"📚 {product}", reply_markup=kb)
         return
 
-    # ---------------- section → screens (FIXED TREE UI) ----------------
-
     if data.startswith("section|"):
         _, product, i = data.split("|")
-    
+
         sections = sorted({
             r.get("section")
             for r in rows
             if r.get("product") == product
         })
-    
+
         section = sections[int(i)]
-    
+
         items = [
             r for r in rows
             if r.get("product") == product and r.get("section") == section
         ]
-    
-        # 🧠 HEADER
-        text = f"📚 {product} → {section}\n\n"
-    
-        # 🧱 GROUP BY SCENARIO (LEVEL 1)
+
         scenarios = {}
-    
+
         for r in items:
             scenarios.setdefault(r.get("scenario", "Без сценария"), []).append(r)
-    
-        # 🎯 BUILD TREE
+
+        text = f"📚 {product} → {section}\n\n"
+
         for scenario, scenario_items in scenarios.items():
-    
             text += f"📂 {scenario}\n"
-    
-            # LEVEL 2 (screens inside scenario)
+
             for r in scenario_items:
                 status = get_status_icon(r.get("status", ""))
                 screen = r.get("screen", "-")
-    
+
                 text += f"   ├ {status} {screen}\n"
-    
+
             text += "\n"
-    
+
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("← Назад", callback_data=f"product|{product}")],
             [InlineKeyboardButton("← В каталог", callback_data="catalog")]
         ])
-    
-        await q.edit_message_text(
-            text,
-            reply_markup=kb
-        )
+
+        await q.edit_message_text(text, reply_markup=kb)
 
 
 # ---------------- MAIN ----------------
