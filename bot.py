@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import gspread
 from google.oauth2.service_account import Credentials
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -30,8 +30,10 @@ def get_rows():
     credentials_info = json.loads(GOOGLE_CREDENTIALS)
     scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
     credentials = Credentials.from_service_account_info(credentials_info, scopes=scopes)
+
     client = gspread.authorize(credentials)
     sheet = client.open_by_key(SPREADSHEET_ID).sheet1
+
     return sheet.get_all_records()
 
 
@@ -43,17 +45,17 @@ def get_status_icon(status):
     status = normalize(status)
 
     if "готов" in status:
-        return "🟢"
+        return "✅"
     if "ревью" in status:
-        return "🟣"
+        return "👀"
     if "работ" in status:
-        return "🟡"
+        return "🛠️"
     if "холд" in status:
-        return "🔴"
+        return "⏸️"
     if "архив" in status:
-        return "⚫"
+        return "📦"
 
-    return "⚪"
+    return "▫️"
 
 
 def search_makets(query):
@@ -82,12 +84,11 @@ def format_result(row):
     status_icon = get_status_icon(status)
 
     return (
-        f"📌 <b>{row.get('screen', 'Без названия')}</b>\n\n"
-        f"📦 <b>Продукт:</b> {row.get('product', '-')}\n"
-        f"📂 <b>Раздел:</b> {row.get('section', '-')}\n"
-        f"🎬 <b>Сценарий:</b> {row.get('scenario', '-')}\n\n"
-        f"{status_icon} <b>Статус:</b> {status}\n"
-        f"🗓 <b>Обновлено:</b> {row.get('updated_at', '-')}"
+        f"🖼 {row.get('screen', 'Без названия')}\n\n\n"
+        f"🩵 Продукт          {row.get('product', '-')}\n"
+        f"📂 Раздел             {row.get('scenario', '-')}\n"
+        f"{status_icon} Статус              {status}\n\n"
+        f"🕑 Обновлено    {row.get('updated_at', '-')}"
     )
 
 
@@ -98,10 +99,10 @@ def result_keyboard(row):
     scenario_url = row.get("scenario_url", "")
 
     if screen_url:
-        buttons.append([InlineKeyboardButton("🖼 Открыть экран", url=screen_url)])
+        buttons.append([InlineKeyboardButton("🖼 Открыть сценарий", url=screen_url)])
 
     if scenario_url:
-        buttons.append([InlineKeyboardButton("🎬 Открыть сценарий", url=scenario_url)])
+        buttons.append([InlineKeyboardButton("📂 Открыть раздел", url=scenario_url)])
 
     return InlineKeyboardMarkup(buttons)
 
@@ -115,11 +116,10 @@ def main_menu():
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Привет! Я бот <b>«А где макет?»</b>\n\n"
+        "👋 Привет! Я бот «А где макет?»\n\n"
         "Помогу найти нужный экран, сценарий или раздел в Figma.\n\n"
         "Выбери действие ниже или просто напиши, что ищешь.",
-        reply_markup=main_menu(),
-        parse_mode="HTML"
+        reply_markup=main_menu()
     )
 
 
@@ -129,16 +129,14 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query == "🔍 Найти макет":
         await update.message.reply_text(
             "Напиши название, фразу или ключевое слово.\n\n"
-            "Например: <b>файлы</b>, <b>субъект</b>, <b>информация о проверке</b>",
-            parse_mode="HTML"
+            "Например: файлы, субъект, информация о проверке"
         )
         return
 
     if query == "📚 Открыть каталог":
         await update.message.reply_text(
             "📚 Каталог скоро добавим.\n\n"
-            "Пока можно искать макеты текстом.",
-            parse_mode="HTML"
+            "Пока можно искать макеты текстом."
         )
         return
 
@@ -152,20 +150,13 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    await update.message.reply_text(
-        f"Нашла макеты: <b>{len(results)}</b>",
-        parse_mode="HTML"
-    )
+    await update.message.reply_text("🎉 Кое-что нашлось:")
 
     for row in results[:5]:
         await update.message.reply_text(
             format_result(row),
-            reply_markup=result_keyboard(row),
-            parse_mode="HTML"
+            reply_markup=result_keyboard(row)
         )
-
-    if len(results) > 5:
-        await update.message.reply_text(f"Показала первые 5 из {len(results)}.")
 
 
 def main():
