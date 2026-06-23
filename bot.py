@@ -307,9 +307,6 @@ def main():
 
     threading.Thread(target=run_server, daemon=True).start()
 
-
-if __name__ == "__main__":
-    main()
     
 if __name__ == "__main__":
     import uvicorn
