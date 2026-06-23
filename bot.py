@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+from html import escape
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import gspread
@@ -24,8 +25,6 @@ from telegram.ext import (
 TOKEN = os.getenv("BOT_TOKEN")
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
-
-CATALOG_PRODUCTS = ["ЕРМДБ", "СКДБ", "СОВА"]
 
 
 def start_health_server():
@@ -57,6 +56,19 @@ def get_rows():
 
 def normalize(text):
     return str(text).lower().strip()
+
+
+def html(text):
+    return escape(str(text))
+
+
+def make_link(text, url):
+    text = html(text)
+
+    if url:
+        return f'<a href="{html(url)}">{text}</a>'
+
+    return text
 
 
 def get_status_icon(status):
@@ -133,10 +145,18 @@ def main_menu():
 
 
 def product_keyboard():
+    rows = get_rows()
+    products = sorted({
+        row.get("product", "")
+        for row in rows
+        if row.get("product")
+    })
+
     buttons = [
-        [InlineKeyboardButton(f"🩵 {product}", callback_data=f"product|{product}")]
-        for product in CATALOG_PRODUCTS
+        [InlineKeyboardButton(product, callback_data=f"product|{product}")]
+        for product in products
     ]
+
     return InlineKeyboardMarkup(buttons)
 
 
@@ -149,7 +169,7 @@ def section_keyboard(product):
     })
 
     buttons = [
-        [InlineKeyboardButton(f"📂 {section}", callback_data=f"section|{product}|{index}")]
+        [InlineKeyboardButton(section, callback_data=f"section|{product}|{index}")]
         for index, section in enumerate(sections)
     ]
 
@@ -164,33 +184,30 @@ def build_section_text_and_keyboard(product, section):
     ]
 
     scenarios = {}
+
     for row in rows:
         scenario = row.get("scenario", "Без раздела")
         scenarios.setdefault(scenario, []).append(row)
 
-    text = f"📚 {product} → {section}\n\n"
-
-    buttons = []
+    text = f"📚 {html(product)} → {html(section)}\n\n"
 
     for scenario, scenario_rows in scenarios.items():
-        text += f"📂 {scenario}\n"
+        scenario_url = scenario_rows[0].get("scenario_url", "")
+        text += f"📂 {make_link(scenario, scenario_url)}\n"
 
         for row in scenario_rows:
             screen = row.get("screen", "Без названия")
+            screen_url = row.get("screen_url", "")
             status_icon = get_status_icon(row.get("status", ""))
-            text += f"   └ {status_icon} {screen}\n"
 
-            buttons.append([
-                InlineKeyboardButton(
-                    f"🖼 {screen}",
-                    callback_data=f"screen|{row['_id']}"
-                )
-            ])
+            text += f"   └ {status_icon} {make_link(screen, screen_url)}\n"
 
         text += "\n"
 
-    buttons.append([InlineKeyboardButton("← Назад к разделам", callback_data=f"product|{product}")])
-    buttons.append([InlineKeyboardButton("← В каталог", callback_data="catalog")])
+    buttons = [
+        [InlineKeyboardButton("← Назад к разделам", callback_data=f"product|{product}")],
+        [InlineKeyboardButton("← В каталог", callback_data="catalog")],
+    ]
 
     return text, InlineKeyboardMarkup(buttons)
 
@@ -259,6 +276,7 @@ async def handle_catalog_click(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if data.startswith("product|"):
         product = data.split("|", 1)[1]
+
         await query.edit_message_text(
             f"📚 {product}\n\nВыбери раздел:",
             reply_markup=section_keyboard(product)
@@ -267,6 +285,7 @@ async def handle_catalog_click(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if data.startswith("section|"):
         _, product, section_index = data.split("|")
+
         sections = sorted({
             row.get("section", "")
             for row in rows
@@ -278,22 +297,11 @@ async def handle_catalog_click(update: Update, context: ContextTypes.DEFAULT_TYP
 
         await query.edit_message_text(
             text,
-            reply_markup=keyboard
+            reply_markup=keyboard,
+            parse_mode="HTML",
+            disable_web_page_preview=True
         )
         return
-
-    if data.startswith("screen|"):
-        screen_id = int(data.split("|")[1])
-        row = next((item for item in rows if item["_id"] == screen_id), None)
-
-        if not row:
-            await query.message.reply_text("Не смогла найти этот макет 😔")
-            return
-
-        await query.message.reply_text(
-            format_result(row),
-            reply_markup=result_keyboard(row)
-        )
 
 
 def main():
