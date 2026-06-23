@@ -266,7 +266,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_catalog_message(update)
         return
 
-        if query == "❓ FAQ":
+    if query == "❓ FAQ":
         await update.message.reply_text(
             "❓ <b>Что умеет бот?</b>\n"
             "Помогает быстро найти нужный экран, сценарий или раздел в Figma. "
