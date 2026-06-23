@@ -165,10 +165,10 @@ def kb_row(r):
     kb = []
 
     if r.get("screen_url"):
-        kb.append([InlineKeyboardButton("🖼 Открыть экран", url=r["screen_url"])])
+        kb.append([InlineKeyboardButton("Открыть сценарий", url=r["screen_url"])])
 
     if r.get("scenario_url"):
-        kb.append([InlineKeyboardButton("📂 Открыть сценарий", url=r["scenario_url"])])
+        kb.append([InlineKeyboardButton("Открыть раздел", url=r["scenario_url"])])
 
     return InlineKeyboardMarkup(kb)
 
