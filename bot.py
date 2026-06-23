@@ -21,6 +21,9 @@ from telegram.ext import (
     filters,
 )
 
+ROWS_CACHE = []
+LAST_UPDATE = 0
+CACHE_TTL = 60  # секунд
 
 TOKEN = os.getenv("BOT_TOKEN")
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
@@ -39,17 +42,30 @@ def start_health_server():
     server.serve_forever()
 
 
+import time
+
 def get_rows():
+    global ROWS_CACHE, LAST_UPDATE
+
+    now = time.time()
+
+    if ROWS_CACHE and now - LAST_UPDATE < CACHE_TTL:
+        return ROWS_CACHE
+
     credentials_info = json.loads(GOOGLE_CREDENTIALS)
     scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
     credentials = Credentials.from_service_account_info(credentials_info, scopes=scopes)
 
     client = gspread.authorize(credentials)
     sheet = client.open_by_key(SPREADSHEET_ID).sheet1
+
     rows = sheet.get_all_records()
 
     for index, row in enumerate(rows):
         row["_id"] = index
+
+    ROWS_CACHE = rows
+    LAST_UPDATE = now
 
     return rows
 
