@@ -96,15 +96,15 @@ def make_link(text, url):
 def get_status_icon(status):
     status = normalize(status)
 
-    if "готов" in status:
+    if "Готово" in status:
         return "✅"
-    if "ревью" in status:
+    if "На ревью" in status:
         return "👀"
-    if "работ" in status:
+    if "В работе" in status:
         return "🛠️"
-    if "холд" in status:
+    if "Холд" in status:
         return "⏸️"
-    if "архив" in status:
+    if "Архив" in status:
         return "📦"
 
     return "▫️"
@@ -151,10 +151,10 @@ def result_keyboard(row):
     scenario_url = row.get("scenario_url", "")
 
     if screen_url:
-        buttons.append([InlineKeyboardButton("Открыть сценарий →", url=screen_url)])
+        buttons.append([InlineKeyboardButton("Открыть сценарий", url=screen_url)])
 
     if scenario_url:
-        buttons.append([InlineKeyboardButton("Открыть раздел →", url=scenario_url)])
+        buttons.append([InlineKeyboardButton("Открыть раздел", url=scenario_url)])
 
     return InlineKeyboardMarkup(buttons)
 
