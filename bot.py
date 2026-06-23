@@ -23,6 +23,8 @@ from telegram.ext import (
     filters,
 )
 
+# ---------------- CONFIG ----------------
+
 TOKEN = os.getenv("BOT_TOKEN")
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
@@ -31,6 +33,12 @@ ROWS_CACHE = []
 LAST_UPDATE = 0
 CACHE_TTL = 300
 
+SYSTEM_BUTTONS = {
+    "🔍 Найти макет",
+    "📚 Открыть каталог",
+    "❓ FAQ",
+    "💬 Связаться",
+}
 
 # ---------------- HEALTH ----------------
 
@@ -60,24 +68,19 @@ def get_rows():
         return ROWS_CACHE
 
     try:
-        credentials_info = json.loads(GOOGLE_CREDENTIALS)
+        creds = json.loads(GOOGLE_CREDENTIALS)
         scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-        credentials = Credentials.from_service_account_info(
-            credentials_info,
-            scopes=scopes
-        )
-
+        credentials = Credentials.from_service_account_info(creds, scopes=scopes)
         client = gspread.authorize(credentials)
         sheet = client.open_by_key(SPREADSHEET_ID).sheet1
+
         rows = sheet.get_all_records()
 
         cleaned = []
-
         for row in rows:
-            if not row.get("product") or not row.get("section"):
-                continue
-            cleaned.append(row)
+            if row.get("product") and row.get("section"):
+                cleaned.append(row)
 
         for i, row in enumerate(cleaned):
             row["_id"] = i
@@ -85,14 +88,12 @@ def get_rows():
         ROWS_CACHE = cleaned
         LAST_UPDATE = now
 
-        print(f"[CACHE] loaded rows: {len(cleaned)}", flush=True)
-
+        print(f"[CACHE] rows loaded: {len(cleaned)}", flush=True)
         return ROWS_CACHE
 
     except Exception as e:
-        print("❌ get_rows error:", e, flush=True)
+        print("❌ Google Sheets error:", e, flush=True)
         print(traceback.format_exc(), flush=True)
-
         return ROWS_CACHE
 
 
@@ -111,7 +112,7 @@ def make_link(text, url):
     return f'<a href="{html(url)}">{text}</a>' if url else text
 
 
-# ❗ ВАЖНО: ВЕРНУЛ ТВОЮ ЛОГИКУ СТАТУСОВ
+# ❗ ВАЖНО: твоя логика статусов сохранена 1:1
 
 def get_status_icon(status):
     status = normalize(status)
@@ -134,7 +135,7 @@ def get_status_icon(status):
 
 def search_makets(query):
     rows = get_rows()
-    query_words = normalize(query).split()
+    words = normalize(query).split()
     results = []
 
     for row in rows:
@@ -147,7 +148,7 @@ def search_makets(query):
             normalize(row.get("status", "")),
         ])
 
-        if all(w in text for w in query_words):
+        if all(w in text for w in words):
             results.append(row)
 
     return results
@@ -195,30 +196,26 @@ def main_menu():
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Привет! Я помогу найти макеты в Figma.",
+        "👋 Привет! Я помогу найти макеты в Figma.",
         reply_markup=main_menu()
     )
 
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        query = update.message.text
+        query = update.message.text.strip()
         print(f"Got message: {query}", flush=True)
 
-        if query == "🔍 Найти макет":
-            await update.message.reply_text("Напиши запрос…")
-            return
-
-        if query == "📚 Открыть каталог":
-            await update.message.reply_text("Каталог скоро будет 🙂")
-            return
-
-        if query == "❓ FAQ":
-            await update.message.reply_text("FAQ пока здесь 🙂")
-            return
-
-        if query == "💬 Связаться":
-            await update.message.reply_text("👉 @G2_Schrodinger")
+        # ❗ БЛОК СИСТЕМНЫХ КНОПОК
+        if query in SYSTEM_BUTTONS:
+            if query == "💬 Связаться":
+                await update.message.reply_text("👉 @G2_Schrodinger")
+            elif query == "❓ FAQ":
+                await update.message.reply_text("FAQ в разработке 🙂")
+            elif query == "📚 Открыть каталог":
+                await update.message.reply_text("Каталог скоро будет 🙂")
+            elif query == "🔍 Найти макет":
+                await update.message.reply_text("Напиши запрос 👇")
             return
 
         results = search_makets(query)
@@ -237,11 +234,11 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     except Exception as e:
-        print("❌ SEARCH ERROR:", e, flush=True)
+        print("❌ ERROR:", e, flush=True)
         print(traceback.format_exc(), flush=True)
 
         await update.message.reply_text(
-            "⚠️ Ошибка. Попробуй ещё раз или напиши в поддержку."
+            "⚠️ Ошибка. Попробуй позже или напиши в поддержку."
         )
 
 
@@ -255,7 +252,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
 
-    print("Bot polling started", flush=True)
+    print("Bot started", flush=True)
     app.run_polling()
 
 
