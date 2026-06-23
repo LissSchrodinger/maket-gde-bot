@@ -152,10 +152,10 @@ def result_keyboard(row):
     scenario_url = row.get("scenario_url", "")
 
     if screen_url:
-        buttons.append([InlineKeyboardButton("🖼 Открыть сценарий", url=screen_url)])
+        buttons.append([InlineKeyboardButton("Открыть сценарий →", url=screen_url)])
 
     if scenario_url:
-        buttons.append([InlineKeyboardButton("📂 Открыть раздел", url=scenario_url)])
+        buttons.append([InlineKeyboardButton("Открыть раздел →", url=scenario_url)])
 
     return InlineKeyboardMarkup(buttons)
 
@@ -164,7 +164,7 @@ def main_menu():
     return ReplyKeyboardMarkup(
         [
             ["🔍 Найти макет", "📚 Открыть каталог"],
-            ["❓ FAQ"]
+            ["❓ FAQ", "✍️ Написать дизайнеру"]
         ],
         resize_keyboard=True
     )
@@ -268,18 +268,50 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if query == "❓ FAQ":
-        await update.message.reply_text(
-            "❓ Часто задаваемые вопросы\n\n"
-            "🔹 Не нашли нужный макет?\n"
-            "Попробуйте поиск по ключевым словам или воспользуйтесь каталогом.\n\n"
-            "🔹 Ссылка на макет устарела?\n"
-            "Напишите @G2_Schrodinger.\n\n"
-            "🔹 Нужно добавить новые макеты?\n"
-            "Напишите владельцу базы.\n\n"
-            "🔹 Возникли вопросы или проблемы?\n"
-            "@G2_Schrodinger"
-        )
-        return
+    await update.message.reply_text(
+        "❓ <b>Часто задаваемые вопросы</b>\n\n"
+
+        "<b>Что умеет бот?</b>\n"
+        "Помогает быстро найти нужный экран, сценарий или раздел в Figma. "
+        "Можно искать по названию, ключевым словам или пользоваться каталогом.\n\n"
+
+        "<b>Не помню название экрана. Что делать?</b>\n"
+        "Открой каталог и пройди по структуре:\n"
+        "Продукт → Раздел → Сценарий.\n\n"
+
+        "<b>Почему я не могу найти макет?</b>\n"
+        "Обычно причина одна из трёх:\n"
+        "• Макет ещё не добавлен в каталог;\n"
+        "• Он называется не так, как ты ожидаешь;\n"
+        "• Макет действительно потерялся.\n\n"
+        "Последний случай пока не зафиксирован 😏\n\n"
+
+        "<b>Как добавить новый макет?</b>\n"
+        "Напиши @G2_Schrodinger и пришли ссылку на Figma.\n"
+        "Желательно сразу указать:\n"
+        "• продукт;\n"
+        "• раздел;\n"
+        "• сценарий;\n"
+        "• что именно нужно добавить.\n\n"
+
+        "<b>Что делать, если ссылка сломалась или ведёт не туда?</b>\n"
+        "Напиши @G2_Schrodinger. Желательно сразу приложить ссылку, по которой переходил, "
+        "и коротко опиши проблему.\n\n"
+
+        "<b>Кому писать, если всё плохо?</b>\n"
+        "Если ничего не находится, каталог выглядит странно, ссылки не работают "
+        "или просто хочется пожаловаться на жизнь —\n\n"
+        "👉 @G2_Schrodinger",
+        parse_mode='HTML'
+    )
+    return
+
+    if query == "✍️ Написать дизайнеру":
+    await update.message.reply_text(
+        "Если что-то не работает, не находится или просто хочется предложить улучшение:\n\n"
+        "👉 @G2_Schrodinger"
+    )
+    return
 
     results = search_makets(query)
 
