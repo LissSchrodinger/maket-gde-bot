@@ -30,65 +30,59 @@ TOKEN = os.getenv("BOT_TOKEN")
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
 
-ROWS_CACHE = []
-LAST_UPDATE = 0
-CACHE_TTL = 300
+CACHE = []
+CACHE_TIME = 0
+TTL = 300
 
 
 # ---------------- HEALTH ----------------
 
-def run_server():
-    class Handler(BaseHTTPRequestHandler):
+def run_health():
+    class H(BaseHTTPRequestHandler):
         def do_GET(self):
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b"OK")
 
-        def do_HEAD(self):
-            self.send_response(200)
-            self.end_headers()
-
     port = int(os.getenv("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), Handler)
-    server.serve_forever()
+    HTTPServer(("0.0.0.0", port), H).serve_forever()
 
 
 # ---------------- DATA ----------------
 
 def get_rows():
-    global ROWS_CACHE, LAST_UPDATE
+    global CACHE, CACHE_TIME
 
     now = time.time()
-    if ROWS_CACHE and now - LAST_UPDATE < CACHE_TTL:
-        return ROWS_CACHE
+    if CACHE and now - CACHE_TIME < TTL:
+        return CACHE
 
     creds = json.loads(GOOGLE_CREDENTIALS)
 
-    credentials = Credentials.from_service_account_info(
-        creds,
-        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
+    client = gspread.authorize(
+        Credentials.from_service_account_info(
+            creds,
+            scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
+        )
     )
 
-    client = gspread.authorize(credentials)
     sheet = client.open_by_key(SPREADSHEET_ID).sheet1
-
     rows = sheet.get_all_records()
 
-    cleaned = []
+    clean = []
     for i, r in enumerate(rows):
         if r.get("product") and r.get("section"):
             r["_id"] = i
-            cleaned.append(r)
+            clean.append(r)
 
-    ROWS_CACHE = cleaned
-    LAST_UPDATE = now
-
-    return ROWS_CACHE
+    CACHE = clean
+    CACHE_TIME = now
+    return CACHE
 
 
 # ---------------- UTILS ----------------
 
-def normalize(t):
+def norm(t):
     return str(t).lower().strip()
 
 
@@ -96,14 +90,14 @@ def h(t):
     return escape(str(t))
 
 
-def get_status_icon(status):
-    s = normalize(status)
+def icon(status):
+    s = norm(status)
 
-    if "готово" in s:
+    if "готов" in s:
         return "🟢"
-    if "на ревью" in s:
+    if "ревью" in s:
         return "👀"
-    if "в работе" in s:
+    if "работ" in s:
         return "🛠️"
     if "холд" in s:
         return "⏸️"
@@ -113,31 +107,25 @@ def get_status_icon(status):
     return "▫️"
 
 
-def link(text, url):
-    if not url:
-        return h(text)
-    return f'<a href="{escape(url)}">{h(text)}</a>'
-
-
 # ---------------- SEARCH ----------------
 
-def search_makets(query):
+def search(query):
     rows = get_rows()
-    q = normalize(query).split()
+    words = norm(query).split()
 
     res = []
 
     for r in rows:
-        blob = " ".join([
-            normalize(r.get("product", "")),
-            normalize(r.get("section", "")),
-            normalize(r.get("scenario", "")),
-            normalize(r.get("screen", "")),
-            normalize(r.get("keywords", "")),
-            normalize(r.get("status", "")),
+        text = " ".join([
+            norm(r.get("product", "")),
+            norm(r.get("section", "")),
+            norm(r.get("scenario", "")),
+            norm(r.get("screen", "")),
+            norm(r.get("keywords", "")),
+            norm(r.get("status", "")),
         ])
 
-        if all(w in blob for w in q):
+        if all(w in text for w in words):
             res.append(r)
 
     return res
@@ -145,7 +133,7 @@ def search_makets(query):
 
 # ---------------- UI ----------------
 
-def main_menu():
+def menu():
     return ReplyKeyboardMarkup(
         [
             ["🔍 Найти макет", "📚 Открыть каталог"],
@@ -155,17 +143,17 @@ def main_menu():
     )
 
 
-def format_result(r):
+def format_row(r):
     return (
-        f"🖼 {h(r.get('screen','Без названия'))}\n\n"
-        f"🩵 Продукт: {h(r.get('product','-'))}\n"
-        f"📂 Раздел: {h(r.get('section','-'))}\n"
-        f"{get_status_icon(r.get('status',''))} Статус: {h(r.get('status','-'))}\n\n"
-        f"🕑 Обновлено: {h(r.get('updated_at','-'))}"
+        f"🖼 {r.get('screen','Без названия')}\n\n"
+        f"🩵 Продукт: {r.get('product','-')}\n"
+        f"📂 Раздел: {r.get('section','-')}\n"
+        f"{icon(r.get('status',''))} Статус: {r.get('status','-')}\n\n"
+        f"🕑 {r.get('updated_at','-')}"
     )
 
 
-def result_keyboard(r):
+def kb_row(r):
     kb = []
 
     if r.get("screen_url"):
@@ -181,12 +169,12 @@ def result_keyboard(r):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Привет! Я помогу найти макеты.",
-        reply_markup=main_menu()
+        "Привет! Я помогу найти макеты.",
+        reply_markup=menu()
     )
 
 
-async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.message.text
 
     if q == "🔍 Найти макет":
@@ -207,32 +195,47 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if q == "❓ FAQ":
-        await update.message.reply_text("FAQ: пиши @G2_Schrodinger")
+        await update.message.reply_text(
+            "Раздел, который обычно никто не читает 😐\n\n"
+    
+            "🔎 Поиск не нашёл макет\n"
+            "Это не значит, что его нет.\n"
+            "Попробуй другой поисковый запрос.\n\n"
+    
+            "🧠 “Я точно видел этот макет”\n"
+            "Верю. Что-то точно случилось:\n"
+            "— Макет переехал, а дизайнер не обновил ссылку\n"
+            "— Это новый макет и его еще не добавили в базу\n"
+            "— Никто ещё не догадался, как его назвать нормально\n\n"
+            "Что бы ни случилось — пиши @G2_Schrodinger\n\n"
+    
+            "🔐 Нет доступа\n"
+            "Свяжись с дизайнером.\n\n"
+        )
         return
 
     if q == "💬 Связаться":
         await update.message.reply_text("@G2_Schrodinger")
         return
 
-    res = search_makets(q)
+    res = search(q)
 
     if not res:
-        await update.message.reply_text("Ничего не найдено", reply_markup=main_menu())
+        await update.message.reply_text("Ничего не найдено", reply_markup=menu())
         return
 
-    await update.message.reply_text("🎉 Нашла:")
+    await update.message.reply_text("Нашла:")
 
     for r in res[:5]:
         await update.message.reply_text(
-            format_result(r),
-            reply_markup=result_keyboard(r),
-            parse_mode="HTML"
+            format_row(r),
+            reply_markup=kb_row(r)
         )
 
 
-# ---------------- CATALOG (TREE WITH LINKS) ----------------
+# ---------------- CATALOG ----------------
 
-async def catalog_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
 
@@ -251,7 +254,7 @@ async def catalog_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data.startswith("product|"):
-        product = data.split("|", 1)[1]
+        product = data.split("|")[1]
 
         sections = sorted({
             r.get("section")
@@ -284,22 +287,18 @@ async def catalog_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
 
         scenarios = {}
+
         for r in items:
-            scenarios.setdefault(r.get("scenario", "Без сценария"), []).append(r)
+            scenarios.setdefault(r.get("scenario","Без сценария"), []).append(r)
 
         text = f"📚 {h(product)} → {h(section)}\n\n"
 
-        for scenario, lst in scenarios.items():
+        for sc, lst in scenarios.items():
             url = lst[0].get("scenario_url")
-
-            text += f"📂 {link(scenario, url)}\n"
+            text += f"📂 {h(sc)}\n"
 
             for r in lst:
-                screen = r.get("screen", "-")
-                screen_url = r.get("screen_url", "")
-                status = get_status_icon(r.get("status", ""))
-
-                text += f"   └ {status} {link(screen, screen_url)}\n"
+                text += f"   └ {icon(r.get('status',''))} {h(r.get('screen',''))}\n"
 
             text += "\n"
 
@@ -308,26 +307,21 @@ async def catalog_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("← В каталог", callback_data="catalog")]
         ])
 
-        await q.edit_message_text(
-            text,
-            reply_markup=kb,
-            parse_mode="HTML",
-            disable_web_page_preview=True
-        )
+        await q.edit_message_text(text, reply_markup=kb)
 
 
 # ---------------- MAIN ----------------
 
 def main():
-    threading.Thread(target=run_server, daemon=True).start()
+    threading.Thread(target=run_health, daemon=True).start()
 
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.bot.delete_webhook(drop_pending_updates=True)
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(catalog_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
+    app.add_handler(CallbackQueryHandler(catalog))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_handler))
 
     print("BOT STARTED")
 
