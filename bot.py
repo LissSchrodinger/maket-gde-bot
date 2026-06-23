@@ -39,6 +39,10 @@ def start_health_server():
             self.end_headers()
             self.wfile.write(b"Bot is alive")
 
+        def do_HEAD(self):
+            self.send_response(200)
+            self.end_headers()
+
     port = int(os.getenv("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), Handler)
     server.serve_forever()
@@ -254,6 +258,7 @@ async def show_catalog_message(update: Update):
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text
+    print(f"Got message: {query}", flush=True)
 
     if query == "🔍 Найти макет":
         await update.message.reply_text(
@@ -383,6 +388,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_catalog_click))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
 
+    print("Bot polling started", flush=True)
     app.run_polling()
 
 
