@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+import time
 from html import escape
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -21,14 +22,13 @@ from telegram.ext import (
     filters,
 )
 
-ROWS_CACHE = []
-LAST_UPDATE = 0
-CACHE_TTL = 60  # секунд
-
 TOKEN = os.getenv("BOT_TOKEN")
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
 
+ROWS_CACHE = []
+LAST_UPDATE = 0
+CACHE_TTL = 300  # 5 минут
 
 def start_health_server():
     class Handler(BaseHTTPRequestHandler):
@@ -58,16 +58,23 @@ def get_rows():
 
     client = gspread.authorize(credentials)
     sheet = client.open_by_key(SPREADSHEET_ID).sheet1
-
     rows = sheet.get_all_records()
 
-    for index, row in enumerate(rows):
+    cleaned_rows = []
+
+    for row in rows:
+        if not row.get("product") or not row.get("section"):
+            continue
+
+        cleaned_rows.append(row)
+
+    for index, row in enumerate(cleaned_rows):
         row["_id"] = index
 
-    ROWS_CACHE = rows
+    ROWS_CACHE = cleaned_rows
     LAST_UPDATE = now
 
-    return rows
+    return ROWS_CACHE
 
 
 def normalize(text):
