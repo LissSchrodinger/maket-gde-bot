@@ -4,10 +4,12 @@ import threading
 import time
 import traceback
 from html import escape
-from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import gspread
 from google.oauth2.service_account import Credentials
+
+from fastapi import FastAPI, Request
+import uvicorn
 
 from telegram import (
     InlineKeyboardButton,
@@ -25,42 +27,38 @@ from telegram.ext import (
     filters,
 )
 
+# ---------------- ENV ----------------
+
 TOKEN = os.getenv("BOT_TOKEN")
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
 
-ROWS_CACHE = []
-LAST_UPDATE = 0
-CACHE_TTL = 300
+BASE_URL = "https://maket-gde-bot.onrender.com"
+WEBHOOK_PATH = "/webhook"
+
+# ---------------- APP ----------------
+
+fastapi_app = FastAPI()
+telegram_app = None
 
 
-# ---------------- HEALTH ----------------
+# ---------------- WEBHOOK ----------------
 
-def start_health_server():
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"Bot is alive")
-
-        def do_HEAD(self):
-            self.send_response(200)
-            self.end_headers()
-
-    port = int(os.getenv("PORT", 10000))
-    HTTPServer(("0.0.0.0", port), Handler).serve_forever()
+@fastapi_app.get("/")
+def health():
+    return {"status": "ok"}
 
 
-# ---------------- DATA ----------------
+@fastapi_app.post(WEBHOOK_PATH)
+async def webhook(req: Request):
+    update = Update.de_json(await req.json(), telegram_app.bot)
+    await telegram_app.process_update(update)
+    return {"ok": True}
+
+
+# ---------------- GOOGLE SHEETS ----------------
 
 def get_rows():
-    global ROWS_CACHE, LAST_UPDATE
-
-    now = time.time()
-
-    if ROWS_CACHE and now - LAST_UPDATE < CACHE_TTL:
-        return ROWS_CACHE
-
     creds = json.loads(GOOGLE_CREDENTIALS)
 
     credentials = Credentials.from_service_account_info(
@@ -71,30 +69,13 @@ def get_rows():
     client = gspread.authorize(credentials)
     sheet = client.open_by_key(SPREADSHEET_ID).sheet1
 
-    rows = sheet.get_all_records()
-
-    cleaned = []
-    for r in rows:
-        if r.get("product") and r.get("section"):
-            cleaned.append(r)
-
-    for i, r in enumerate(cleaned):
-        r["_id"] = i
-
-    ROWS_CACHE = cleaned
-    LAST_UPDATE = now
-
-    return ROWS_CACHE
+    return sheet.get_all_records()
 
 
 # ---------------- UTILS ----------------
 
 def normalize(text):
     return str(text).lower().strip()
-
-
-def h(text):
-    return escape(str(text))
 
 
 def get_status_icon(status):
@@ -166,85 +147,18 @@ def main_menu():
     return ReplyKeyboardMarkup(
         [
             ["🔍 Найти макет", "📚 Открыть каталог"],
-            ["❓ FAQ", "💬 Связаться"]
+            ["❓ FAQ", "💬 Связаться"],
         ],
         resize_keyboard=True
     )
-
-
-# ---------------- CATALOG ----------------
-
-def product_keyboard():
-    rows = get_rows()
-
-    products = sorted({
-        r.get("product", "")
-        for r in rows
-        if r.get("product")
-    })
-
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(p, callback_data=f"product|{p}")]
-        for p in products
-    ])
-
-
-def section_keyboard(product):
-    rows = get_rows()
-
-    sections = sorted({
-        r.get("section", "")
-        for r in rows
-        if r.get("product") == product and r.get("section")
-    })
-
-    buttons = [
-        [InlineKeyboardButton(s, callback_data=f"section|{product}|{i}")]
-        for i, s in enumerate(sections)
-    ]
-
-    buttons.append([InlineKeyboardButton("← Назад", callback_data="catalog")])
-
-    return InlineKeyboardMarkup(buttons)
-
-
-def build_section(product, section):
-    rows = get_rows()
-
-    filtered = [
-        r for r in rows
-        if r.get("product") == product and r.get("section") == section
-    ]
-
-    scenarios = {}
-
-    for r in filtered:
-        scenarios.setdefault(r.get("scenario", "Без сценария"), []).append(r)
-
-    text = f"📚 {h(product)} → {h(section)}\n\n"
-
-    for scenario, items in scenarios.items():
-        text += f"📂 {scenario}\n"
-
-        for r in items:
-            text += f"   └ {get_status_icon(r.get('status',''))} {r.get('screen','')}\n"
-
-        text += "\n"
-
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("← Назад", callback_data=f"product|{product}")],
-        [InlineKeyboardButton("← В каталог", callback_data="catalog")]
-    ])
-
-    return text, kb
 
 
 # ---------------- HANDLERS ----------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Привет! Я помогу найти нужный сценарий или раздел в Figma.\n\n"
-        "Выбери действие ниже или просто напиши запрос.",
+        "👋 Привет! Я помогу найти сценарий или раздел в Figma.\n\n"
+        "Выбери действие или просто напиши запрос.",
         reply_markup=main_menu()
     )
 
@@ -254,17 +168,25 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         q = update.message.text
 
         if q == "🔍 Найти макет":
-            await update.message.reply_text("Напиши запрос.")
+            await update.message.reply_text("Напиши запрос для поиска.")
             return
 
         if q == "📚 Открыть каталог":
-            await update.message.reply_text("📚 Каталог", reply_markup=product_keyboard())
+            rows = get_rows()
+            products = sorted({r.get("product") for r in rows if r.get("product")})
+
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton(p, callback_data=f"product|{p}")]
+                for p in products
+            ])
+
+            await update.message.reply_text("📚 Каталог", reply_markup=kb)
             return
 
         if q == "❓ FAQ":
             await update.message.reply_text(
                 "❓ FAQ\n\n"
-                "Если что-то не находится — напиши @G2_Schrodinger"
+                "Если ничего не находится — напиши @G2_Schrodinger"
             )
             return
 
@@ -276,7 +198,8 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not results:
             await update.message.reply_text(
-                "😔 Ничего не нашла\nПопробуй другой запрос.",
+                "😔 Ничего не нашла\n\n"
+                "Попробуй другой запрос или открой каталог.",
                 reply_markup=main_menu()
             )
             return
@@ -293,58 +216,96 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(traceback.format_exc())
 
 
+# ---------------- CATALOG NAVIGATION ----------------
+
 async def handle_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
 
     data = q.data
-
     rows = get_rows()
-
-    if data == "catalog":
-        await q.edit_message_text("📚 Каталог", reply_markup=product_keyboard())
-        return
 
     if data.startswith("product|"):
         product = data.split("|")[1]
-        await q.edit_message_text(
-            f"📚 {product}",
-            reply_markup=section_keyboard(product)
-        )
+
+        sections = sorted({
+            r.get("section")
+            for r in rows
+            if r.get("product") == product
+        })
+
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(s, callback_data=f"section|{product}|{i}")]
+            for i, s in enumerate(sections)
+        ] + [[InlineKeyboardButton("← Назад", callback_data="catalog")]])
+
+        await q.edit_message_text(f"📚 {product}", reply_markup=kb)
         return
 
     if data.startswith("section|"):
         _, product, i = data.split("|")
 
         sections = sorted({
-            r.get("section", "")
+            r.get("section")
             for r in rows
             if r.get("product") == product
         })
 
         section = sections[int(i)]
-        text, kb = build_section(product, section)
 
-        await q.edit_message_text(
-            text,
-            reply_markup=kb,
-            disable_web_page_preview=True
-        )
+        filtered = [
+            r for r in rows
+            if r.get("product") == product and r.get("section") == section
+        ]
+
+        text = f"📚 {product} → {section}\n\n"
+
+        for r in filtered:
+            text += f"└ {get_status_icon(r.get('status'))} {r.get('screen')}\n"
+
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("← Назад", callback_data=f"product|{product}")],
+            [InlineKeyboardButton("← В каталог", callback_data="catalog")]
+        ])
+
+        await q.edit_message_text(text, reply_markup=kb)
+        return
+
+    if data == "catalog":
+        rows = get_rows()
+        products = sorted({r.get("product") for r in rows if r.get("product")})
+
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(p, callback_data=f"product|{p}")]
+            for p in products
+        ])
+
+        await q.edit_message_text("📚 Каталог", reply_markup=kb)
+
+
+# ---------------- START WEBHOOK ----------------
+
+async def post_init(app):
+    await app.bot.set_webhook(url=f"{BASE_URL}{WEBHOOK_PATH}")
+
+
+def run_server():
+    port = int(os.getenv("PORT", 10000))
+    uvicorn.run(fastapi_app, host="0.0.0.0", port=port)
 
 
 # ---------------- MAIN ----------------
 
 def main():
-    threading.Thread(target=start_health_server, daemon=True).start()
+    global telegram_app
 
-    app = ApplicationBuilder().token(TOKEN).build()
+    telegram_app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(handle_catalog))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
+    telegram_app.add_handler(CommandHandler("start", start))
+    telegram_app.add_handler(CallbackQueryHandler(handle_catalog))
+    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
 
-    print("BOT STARTED")
-    app.run_polling()
+    threading.Thread(target=run_server, daemon=True).start()
 
 
 if __name__ == "__main__":
