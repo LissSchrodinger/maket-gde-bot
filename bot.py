@@ -5,7 +5,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import gspread
 from google.oauth2.service_account import Credentials
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 
@@ -28,16 +28,10 @@ def start_health_server():
 
 def get_rows():
     credentials_info = json.loads(GOOGLE_CREDENTIALS)
-
     scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-    credentials = Credentials.from_service_account_info(
-        credentials_info,
-        scopes=scopes
-    )
-
+    credentials = Credentials.from_service_account_info(credentials_info, scopes=scopes)
     client = gspread.authorize(credentials)
     sheet = client.open_by_key(SPREADSHEET_ID).sheet1
-
     return sheet.get_all_records()
 
 
@@ -45,9 +39,26 @@ def normalize(text):
     return str(text).lower().strip()
 
 
+def get_status_icon(status):
+    status = normalize(status)
+
+    if "готов" in status:
+        return "🟢"
+    if "ревью" in status:
+        return "🟣"
+    if "работ" in status:
+        return "🟡"
+    if "холд" in status:
+        return "🔴"
+    if "архив" in status:
+        return "⚫"
+
+    return "⚪"
+
+
 def search_makets(query):
     rows = get_rows()
-    query = normalize(query)
+    query_words = normalize(query).split()
     results = []
 
     for row in rows:
@@ -60,55 +71,101 @@ def search_makets(query):
             normalize(row.get("status", "")),
         ])
 
-        if query in searchable_text:
+        if all(word in searchable_text for word in query_words):
             results.append(row)
 
     return results
 
 
 def format_result(row):
+    status = row.get("status", "-")
+    status_icon = get_status_icon(status)
+
     return (
-        f"📌 {row.get('screen', 'Без названия')}\n\n"
-        f"Продукт: {row.get('product', '-')}\n"
-        f"Раздел: {row.get('section', '-')}\n"
-        f"Сценарий: {row.get('scenario', '-')}\n"
-        f"Статус: {row.get('status', '-')}\n"
-        f"Обновлено: {row.get('updated_at', '-')}\n\n"
-        f"🔗 Экран: {row.get('screen_url', '-')}\n"
-        f"🔗 Сценарий: {row.get('scenario_url', '-')}"
+        f"📌 <b>{row.get('screen', 'Без названия')}</b>\n\n"
+        f"📦 <b>Продукт:</b> {row.get('product', '-')}\n"
+        f"📂 <b>Раздел:</b> {row.get('section', '-')}\n"
+        f"🎬 <b>Сценарий:</b> {row.get('scenario', '-')}\n\n"
+        f"{status_icon} <b>Статус:</b> {status}\n"
+        f"🗓 <b>Обновлено:</b> {row.get('updated_at', '-')}"
+    )
+
+
+def result_keyboard(row):
+    buttons = []
+
+    screen_url = row.get("screen_url", "")
+    scenario_url = row.get("scenario_url", "")
+
+    if screen_url:
+        buttons.append([InlineKeyboardButton("🖼 Открыть экран", url=screen_url)])
+
+    if scenario_url:
+        buttons.append([InlineKeyboardButton("🎬 Открыть сценарий", url=scenario_url)])
+
+    return InlineKeyboardMarkup(buttons)
+
+
+def main_menu():
+    return ReplyKeyboardMarkup(
+        [["🔍 Найти макет", "📚 Открыть каталог"]],
+        resize_keyboard=True
     )
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Привет! Я бот «А где макет?» 👀\n\n"
-        "Напиши, что ищешь. Например:\n"
-        "• файлы\n"
-        "• субъект\n"
-        "• информация о проверке"
+        "👋 Привет! Я бот <b>«А где макет?»</b>\n\n"
+        "Помогу найти нужный экран, сценарий или раздел в Figma.\n\n"
+        "Выбери действие ниже или просто напиши, что ищешь.",
+        reply_markup=main_menu(),
+        parse_mode="HTML"
     )
 
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text
+
+    if query == "🔍 Найти макет":
+        await update.message.reply_text(
+            "Напиши название, фразу или ключевое слово.\n\n"
+            "Например: <b>файлы</b>, <b>субъект</b>, <b>информация о проверке</b>",
+            parse_mode="HTML"
+        )
+        return
+
+    if query == "📚 Открыть каталог":
+        await update.message.reply_text(
+            "📚 Каталог скоро добавим.\n\n"
+            "Пока можно искать макеты текстом.",
+            parse_mode="HTML"
+        )
+        return
+
     results = search_makets(query)
 
     if not results:
         await update.message.reply_text(
             "Ничего не нашла 😔\n\n"
-            "Попробуй другую формулировку или ключевое слово."
+            "Попробуй другую формулировку или ключевое слово.",
+            reply_markup=main_menu()
         )
         return
 
-    limited_results = results[:5]
+    await update.message.reply_text(
+        f"Нашла макеты: <b>{len(results)}</b>",
+        parse_mode="HTML"
+    )
 
-    text = f"Нашла макеты: {len(results)}\n\n"
-    text += "\n\n———\n\n".join(format_result(row) for row in limited_results)
+    for row in results[:5]:
+        await update.message.reply_text(
+            format_result(row),
+            reply_markup=result_keyboard(row),
+            parse_mode="HTML"
+        )
 
     if len(results) > 5:
-        text += f"\n\nПоказала первые 5 из {len(results)}."
-
-    await update.message.reply_text(text)
+        await update.message.reply_text(f"Показала первые 5 из {len(results)}.")
 
 
 def main():
