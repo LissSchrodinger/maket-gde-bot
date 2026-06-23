@@ -5,13 +5,27 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import gspread
 from google.oauth2.service_account import Credentials
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    Update,
+)
+from telegram.ext import (
+    ApplicationBuilder,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 
 TOKEN = os.getenv("BOT_TOKEN")
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
+
+CATALOG_PRODUCTS = ["ЕРМДБ", "СКДБ", "СОВА"]
 
 
 def start_health_server():
@@ -33,8 +47,12 @@ def get_rows():
 
     client = gspread.authorize(credentials)
     sheet = client.open_by_key(SPREADSHEET_ID).sheet1
+    rows = sheet.get_all_records()
 
-    return sheet.get_all_records()
+    for index, row in enumerate(rows):
+        row["_id"] = index
+
+    return rows
 
 
 def normalize(text):
@@ -114,12 +132,81 @@ def main_menu():
     )
 
 
+def product_keyboard():
+    buttons = [
+        [InlineKeyboardButton(f"🩵 {product}", callback_data=f"product|{product}")]
+        for product in CATALOG_PRODUCTS
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+
+def section_keyboard(product):
+    rows = get_rows()
+    sections = sorted({
+        row.get("section", "")
+        for row in rows
+        if row.get("product") == product and row.get("section")
+    })
+
+    buttons = [
+        [InlineKeyboardButton(f"📂 {section}", callback_data=f"section|{product}|{index}")]
+        for index, section in enumerate(sections)
+    ]
+
+    buttons.append([InlineKeyboardButton("← Назад к продуктам", callback_data="catalog")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def build_section_text_and_keyboard(product, section):
+    rows = [
+        row for row in get_rows()
+        if row.get("product") == product and row.get("section") == section
+    ]
+
+    scenarios = {}
+    for row in rows:
+        scenario = row.get("scenario", "Без раздела")
+        scenarios.setdefault(scenario, []).append(row)
+
+    text = f"📚 {product} → {section}\n\n"
+
+    buttons = []
+
+    for scenario, scenario_rows in scenarios.items():
+        text += f"📂 {scenario}\n"
+
+        for row in scenario_rows:
+            screen = row.get("screen", "Без названия")
+            status_icon = get_status_icon(row.get("status", ""))
+            text += f"   └ {status_icon} {screen}\n"
+
+            buttons.append([
+                InlineKeyboardButton(
+                    f"🖼 {screen}",
+                    callback_data=f"screen|{row['_id']}"
+                )
+            ])
+
+        text += "\n"
+
+    buttons.append([InlineKeyboardButton("← Назад к разделам", callback_data=f"product|{product}")])
+    buttons.append([InlineKeyboardButton("← В каталог", callback_data="catalog")])
+
+    return text, InlineKeyboardMarkup(buttons)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Привет! Я бот «А где макет?»\n\n"
-        "Помогу найти нужный экран, сценарий или раздел в Figma.\n\n"
+        "Привет! Я помогу найти нужный сценарий или раздел в Figma.\n\n"
         "Выбери действие ниже или просто напиши, что ищешь.",
         reply_markup=main_menu()
+    )
+
+
+async def show_catalog_message(update: Update):
+    await update.message.reply_text(
+        "📚 Каталог\n\nВыбери продукт:",
+        reply_markup=product_keyboard()
     )
 
 
@@ -129,15 +216,12 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query == "🔍 Найти макет":
         await update.message.reply_text(
             "Напиши название, фразу или ключевое слово.\n\n"
-            "Например: файлы, субъект, информация о проверке"
+            "Например: добавление файла, создание запроса, информация о проверке"
         )
         return
 
     if query == "📚 Открыть каталог":
-        await update.message.reply_text(
-            "📚 Каталог скоро добавим.\n\n"
-            "Пока можно искать макеты текстом."
-        )
+        await show_catalog_message(update)
         return
 
     results = search_makets(query)
@@ -159,11 +243,66 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def handle_catalog_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    rows = get_rows()
+
+    if data == "catalog":
+        await query.edit_message_text(
+            "📚 Каталог\n\nВыбери продукт:",
+            reply_markup=product_keyboard()
+        )
+        return
+
+    if data.startswith("product|"):
+        product = data.split("|", 1)[1]
+        await query.edit_message_text(
+            f"📚 {product}\n\nВыбери раздел:",
+            reply_markup=section_keyboard(product)
+        )
+        return
+
+    if data.startswith("section|"):
+        _, product, section_index = data.split("|")
+        sections = sorted({
+            row.get("section", "")
+            for row in rows
+            if row.get("product") == product and row.get("section")
+        })
+
+        section = sections[int(section_index)]
+        text, keyboard = build_section_text_and_keyboard(product, section)
+
+        await query.edit_message_text(
+            text,
+            reply_markup=keyboard
+        )
+        return
+
+    if data.startswith("screen|"):
+        screen_id = int(data.split("|")[1])
+        row = next((item for item in rows if item["_id"] == screen_id), None)
+
+        if not row:
+            await query.message.reply_text("Не смогла найти этот макет 😔")
+            return
+
+        await query.message.reply_text(
+            format_result(row),
+            reply_markup=result_keyboard(row)
+        )
+
+
 def main():
     threading.Thread(target=start_health_server, daemon=True).start()
 
     app = ApplicationBuilder().token(TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(handle_catalog_click))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
 
     app.run_polling()
