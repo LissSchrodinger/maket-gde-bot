@@ -139,7 +139,10 @@ def result_keyboard(row):
 
 def main_menu():
     return ReplyKeyboardMarkup(
-        [["🔍 Найти макет", "📚 Открыть каталог"]],
+        [
+            ["🔍 Найти макет", "📚 Открыть каталог"],
+            ["❓ FAQ"]
+        ],
         resize_keyboard=True
     )
 
@@ -241,14 +244,33 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_catalog_message(update)
         return
 
+    if query == "❓ FAQ":
+    await update.message.reply_text(
+        "❓ Часто задаваемые вопросы\n\n"
+        "🔹 Не нашли нужный макет?\n"
+        "Попробуйте поиск по ключевым словам или воспользуйтесь каталогом.\n\n"
+        "🔹 Ссылка на макет устарела?\n"
+        "Напишите @G2_Schrodinger.\n\n"
+        "🔹 Нужно добавить новые макеты?\n"
+        "Напишите владельцу базы.\n\n"
+        "🔹 Возникли вопросы или проблемы?\n"
+        "@G2_Schrodinger"
+    )
+    return
+
     results = search_makets(query)
 
     if not results:
         await update.message.reply_text(
-            "Ничего не нашла 😔\n\n"
-            "Попробуй другую формулировку или ключевое слово.",
+            "😔 Ничего не нашла\n\n"
+            "Попробуй:\n"
+            "• другое ключевое слово\n"
+            "• открыть каталог\n"
+            "• поискать по разделам\n\n"
+            "Если макет точно существует или должен быть добавлен — напиши:\n"
+            "@G2_Schrodinger",
             reply_markup=main_menu()
-        )
+)
         return
 
     await update.message.reply_text("🎉 Кое-что нашлось:")
