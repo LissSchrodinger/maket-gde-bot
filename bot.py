@@ -36,7 +36,7 @@ CACHE_TIME = 0
 TTL = 300
 
 
-# ---------------- HEALTH SERVER ----------------
+# ---------------- HEALTH ----------------
 
 def run_server():
     class Handler(BaseHTTPRequestHandler):
@@ -59,7 +59,6 @@ def get_rows():
     global CACHE, CACHE_TIME
 
     if not GOOGLE_CREDENTIALS:
-        print("ERROR: GOOGLE_CREDENTIALS is empty")
         return []
 
     now = time.time()
@@ -125,7 +124,7 @@ def search(query):
     res = []
 
     for r in rows:
-        text = " ".join([
+        blob = " ".join([
             norm(r.get("product", "")),
             norm(r.get("section", "")),
             norm(r.get("scenario", "")),
@@ -134,7 +133,7 @@ def search(query):
             norm(r.get("status", "")),
         ])
 
-        if all(w in text for w in words):
+        if all(w in blob for w in words):
             res.append(r)
 
     return res
@@ -204,14 +203,24 @@ async def search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if q == "❓ FAQ":
-        await update.message.reply_text(
-            "Раздел FAQ\n\n"
-            "🔎 Если макет не найден — попробуй другое слово\n\n"
-            "🧠 Если ты “точно его видел” — он мог переехать или быть переименован\n\n"
-            "🔐 Нет доступа — запроси его стандартным способом\n\n"
-            "💬 Если ничего не помогает — @G2_Schrodinger"
-        )
-        return
+    await update.message.reply_text(
+        "Раздел, который обычно никто не читает 🫠\n\n"
+
+        "🔎 Поиск не нашёл макет\n"
+        "Это не значит, что его нет.\n"
+        "Попробуй другой поисковый запрос.\n\n"
+
+        "🧠 «Я точно видел этот макет»\n"
+        "Верю. Что-то точно случилось:\n"
+        "— Макет переехал, а дизайнер не обновил ссылку\n"
+        "— Это новый макет и его еще не добавили в базу\n"
+        "— Никто ещё не догадался, как его назвать нормально\n"
+        "Что бы ни случилось — пиши @G2_Schrodinger\n\n"
+
+        "🔐 Нет доступа\n"
+        "Свяжись с дизайнером.\n\n"
+    )
+    return
 
     if q == "💬 Связаться":
         await update.message.reply_text("@G2_Schrodinger")
@@ -293,10 +302,20 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = f"📚 {h(product)} → {h(section)}\n\n"
 
         for sc, lst in scenarios.items():
-            text += f"📂 {h(sc)}\n"
+            url = lst[0].get("scenario_url")
+
+            if url:
+                text += f"📂 <a href='{url}'>{h(sc)}</a>\n"
+            else:
+                text += f"📂 {h(sc)}\n"
 
             for r in lst:
-                text += f"   └ {icon(r.get('status',''))} {h(r.get('screen',''))}\n"
+                su = r.get("screen_url")
+
+                if su:
+                    text += f"   └ {icon(r.get('status',''))} <a href='{su}'>{h(r.get('screen',''))}</a>\n"
+                else:
+                    text += f"   └ {icon(r.get('status',''))} {h(r.get('screen',''))}\n"
 
             text += "\n"
 
@@ -305,10 +324,15 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("← В каталог", callback_data="catalog")]
         ])
 
-        await q.edit_message_text(text, reply_markup=kb)
+        await q.edit_message_text(
+            text,
+            reply_markup=kb,
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
 
 
-# ---------------- WEBHOOK CLEANUP ----------------
+# ---------------- WEBHOOK FIX ----------------
 
 async def post_init(app):
     for i in range(3):
@@ -317,7 +341,7 @@ async def post_init(app):
             print("Webhook cleared")
             return
         except Exception as e:
-            print(f"Webhook attempt {i}: {e}")
+            print("Webhook error:", e)
             await asyncio.sleep(2)
 
 
@@ -332,7 +356,7 @@ def main():
     app.add_handler(CallbackQueryHandler(catalog))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_handler))
 
-    print("🚀 BOT STARTED")
+    print("BOT STARTED")
 
     app.run_polling(
         drop_pending_updates=True,
