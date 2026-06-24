@@ -356,6 +356,25 @@ async def error(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------------- MAIN ----------------
 def main():
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class PingHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+        def do_HEAD(self):
+            self.send_response(200)
+            self.end_headers()
+        def log_message(self, *args):
+            pass
+
+    def run_ping():
+        HTTPServer(("0.0.0.0", 8081), PingHandler).serve_forever()
+
+    threading.Thread(target=run_ping, daemon=True).start()
+
     app = (
         ApplicationBuilder()
         .token(TOKEN)
@@ -375,7 +394,6 @@ def main():
         url_path=TOKEN,
         webhook_url=f"{os.environ['WEBHOOK_URL']}/{TOKEN}",
     )
-
 
 if __name__ == "__main__":
     main()
