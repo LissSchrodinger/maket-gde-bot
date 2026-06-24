@@ -374,6 +374,7 @@ def main():
     app.run_webhook(
         listen="0.0.0.0",
         port=int(os.getenv("PORT", 10000)),
+        url_path=TOKEN,                                          # <-- добавь это
         webhook_url=f"{os.environ['WEBHOOK_URL']}/{TOKEN}",
     )
 
