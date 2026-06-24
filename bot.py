@@ -369,21 +369,7 @@ async def error(update: object, context: ContextTypes.DEFAULT_TYPE):
     log.exception("Unhandled error", exc_info=context.error)
 
 
-# ---------------- WEBHOOK INIT ----------------
 
-async def post_init(app):
-    base = os.getenv("WEBHOOK_URL")
-
-    if not base or not base.startswith("https://"):
-        raise RuntimeError("WEBHOOK_URL is missing or invalid (must start with https://)")
-
-    token = os.environ["BOT_TOKEN"]
-    full = f"{base}/{token}"
-
-    await app.bot.delete_webhook(drop_pending_updates=True)
-    await app.bot.set_webhook(full)
-
-    log.info("Webhook set: %s", full)
 
 
 # ---------------- MAIN ----------------
@@ -394,7 +380,6 @@ def main():
     app = (
         ApplicationBuilder()
         .token(TOKEN)
-        .post_init(post_init)
         .build()
     )
 
@@ -408,7 +393,7 @@ def main():
     app.run_webhook(
         listen="0.0.0.0",
         port=int(os.getenv("PORT", 10000)),
-        webhook_url=None
+        webhook_url=f"{os.environ['WEBHOOK_URL']}/{TOKEN}",
     )
 
 
