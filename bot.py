@@ -355,8 +355,14 @@ async def error(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ---------------- MAIN ----------------
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse
+from starlette.routing import Route
 
 def main():
+    async def ping(request: Request):
+        return PlainTextResponse("ok")
 
     app = (
         ApplicationBuilder()
@@ -374,10 +380,10 @@ def main():
     app.run_webhook(
         listen="0.0.0.0",
         port=int(os.getenv("PORT", 10000)),
-        url_path=TOKEN,                                          # <-- добавь это
+        url_path=TOKEN,
         webhook_url=f"{os.environ['WEBHOOK_URL']}/{TOKEN}",
+        starlette_app=Starlette(routes=[Route("/ping", ping)]),
     )
-
 
 if __name__ == "__main__":
     main()
