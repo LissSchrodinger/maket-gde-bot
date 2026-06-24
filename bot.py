@@ -208,7 +208,10 @@ def catalog_kb(rows):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Привет! Я помогу найти макеты.",
+        "Привет 👋\n"
+        "Я бот-каталог макетов Систем Безопасности.\n\n"
+        "Если ищете макет — просто напишите название сценария.\n"
+        "А если не уверены, как он называется, то воспользуйтесь каталогом.",
         reply_markup=menu()
     )
 
@@ -217,7 +220,7 @@ async def search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.message.text
 
     if q == "🔍 Найти макет":
-        await update.message.reply_text("Напиши запрос")
+        await update.message.reply_text("Отправьте название сценария, который хотите найти")
         return
 
     if q == "📚 Открыть каталог":
@@ -225,18 +228,33 @@ async def search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = catalog_kb(rows)
 
         if not kb:
-            await update.message.reply_text("Каталог пуст")
+            await update.message.reply_text("Каталог сейчас отдыхает, скоро вернется на место")
             return
 
         await update.message.reply_text("📚 Каталог", reply_markup=kb)
         return
 
     if q == "❓ FAQ":
-        await update.message.reply_text("FAQ раздел")
+        await update.message.reply_text(
+            "❓Как найти нужный макет?\n"
+            "Если знаете название — вы уже на полпути к успеху.\n"
+            "Нажмите кнопку «Найти макет» и введите название сценария.\n\n"
+            "❓Я не знаю название сценария. Что делать?\n"
+            "Воспользуйтесь каталогом. В нем все макеты сгруппированы по разделам и сценариям.\n\n"
+            "❓Поиск ничего не нашел. Почему?\n"
+            "Возможно, в запросе есть опечатка, сценарий называется иначе или макет еще не добавлен в каталог.\n\n"
+            "❓Все перепробовал, но нужного макета нет.\n"
+            "— Макет переехал, а дизайнер не обновил ссылку;\n"
+            "— Это новый макет и его еще нет в базе;\n"
+            "— Никто ещё не догадался, как его назвать нормально.\n"
+            "Свяжитесь с дизайнером, вам помогут.\n\n"
+            "❓Нашел ошибку / не нашел макет / нужен совет.\n"
+            "Для этого и существует кнопка «Связаться» ✨"
+        )
         return
 
     if q == "💬 Связаться":
-        await update.message.reply_text("@G2_Schrodinger")
+        await update.message.reply_text("👉 @G2_Schrodinger")
         return
 
     res = search(q)
