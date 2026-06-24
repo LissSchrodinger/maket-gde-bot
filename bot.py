@@ -348,6 +348,15 @@ async def post_init(app):
 # ---------------- MAIN ----------------
 
 def main():
+    PID_FILE = "/tmp/bot.lock"
+
+    if os.path.exists(PID_FILE):
+        print("Another instance already running → exit")
+        return
+    
+    with open(PID_FILE, "w") as f:
+        f.write(str(os.getpid()))
+        
     threading.Thread(target=run_server, daemon=True).start()
 
     app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
@@ -366,3 +375,13 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+import atexit
+
+def cleanup():
+    try:
+        os.remove("/tmp/bot.lock")
+    except:
+        pass
+
+atexit.register(cleanup)
