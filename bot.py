@@ -50,24 +50,6 @@ CACHE_TIME = 0
 TTL = 300
 
 
-# ---------------- HEALTH SERVER ----------------
-
-def run_health():
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"OK")
-
-        def do_HEAD(self):
-            self.send_response(200)
-            self.end_headers()
-
-        def log_message(self, fmt, *args):
-            log.debug(fmt, *args)
-
-    port = int(os.getenv("PORT", 10000))
-    HTTPServer(("0.0.0.0", port), Handler).serve_forever()
 
 
 # ---------------- DATA ----------------
@@ -375,7 +357,6 @@ async def error(update: object, context: ContextTypes.DEFAULT_TYPE):
 # ---------------- MAIN ----------------
 
 def main():
-    threading.Thread(target=run_health, daemon=True).start()
 
     app = (
         ApplicationBuilder()
