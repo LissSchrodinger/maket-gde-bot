@@ -372,10 +372,13 @@ async def error(update: object, context: ContextTypes.DEFAULT_TYPE):
 # ---------------- WEBHOOK INIT ----------------
 
 async def post_init(app):
-    url = os.environ.get("WEBHOOK_URL")
-    token = os.environ["BOT_TOKEN"]
+    base = os.getenv("WEBHOOK_URL")
 
-    full = f"{url}/{token}"
+    if not base or not base.startswith("https://"):
+        raise RuntimeError("WEBHOOK_URL is missing or invalid (must start with https://)")
+
+    token = os.environ["BOT_TOKEN"]
+    full = f"{base}/{token}"
 
     await app.bot.delete_webhook(drop_pending_updates=True)
     await app.bot.set_webhook(full)
