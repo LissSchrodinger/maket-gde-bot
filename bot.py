@@ -161,11 +161,13 @@ def menu():
 
 def format_row(r):
     return (
-        f"🖼 {h(r.get('screen','Без названия'))}\n\n"
-        f"🩵 Продукт: {h(r.get('product','-'))}\n"
-        f"📂 Раздел: {h(r.get('section','-'))}\n"
-        f"{icon(r.get('status',''))} Статус: {h(r.get('status','-'))}\n\n"
-        f"🕑 {h(r.get('updated_at','-'))}"
+        f"📃 {r.get('screen', 'Без названия')}\n\n"
+
+        f"🤍 Продукт:        {r.get('product', '—')}\n"
+        f"📂 Раздел:           {r.get('section', '—')}\n"
+        f"🟢 Статус:            {r.get('status', '—')}\n\n"
+
+        f"🕑 Обновлено   {r.get('updated_at', '—')}"
     )
 
 
